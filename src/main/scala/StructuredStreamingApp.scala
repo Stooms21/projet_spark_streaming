@@ -1,14 +1,25 @@
+import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.input_file_name
 import org.apache.spark.sql.types._
+import com.typesafe.config.ConfigFactory
+import org.apache.log4j.{Level, Logger}
+
 
 // Définition de l'objet principal pour l'application de streaming structuré
 object StructuredStreamingApp extends App {
+  // Set log level to WARN to reduce verbosity
+  val configFilePath = "src/main/resources/application.conf"
+  val conf = ConfigFactory.parseFile(new java.io.File(configFilePath))
+
+  val appName = conf.getString("app.name")
+  val master = conf.getString("app.master")
+  val inputDirectory = conf.getString("app.inputDirectory")
 
   // Initialisation de la session Spark avec configuration spécifique
   val spark = SparkSession.builder()
-    .appName("StructuredStreamingApp") // Nom de l'application Spark
-    .master("local[*]") // Exécution en mode local, utilisant tous les cœurs disponibles
+    .appName(appName) // Nom de l'application Spark
+    .master(master) // Exécution en mode local, utilisant tous les cœurs disponibles
     .getOrCreate() // Crée une nouvelle session Spark ou récupère une existante
 
   // Définition du schéma des données pour les fichiers CSV à lire
@@ -43,7 +54,6 @@ object StructuredStreamingApp extends App {
   ))
 
   // Chemin vers le répertoire contenant les fichiers CSV à lire
-  val inputDirectory = "C:/Users/Stooms/IdeaProjects/sparkStreaming/data"
 
   // Configuration de la lecture des fichiers CSV en mode streaming
   val df = spark
