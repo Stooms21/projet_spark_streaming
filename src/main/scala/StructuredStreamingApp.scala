@@ -1,9 +1,7 @@
-import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.input_file_name
-import org.apache.spark.sql.types._
 import com.typesafe.config.ConfigFactory
-import org.apache.log4j.{Level, Logger}
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.functions.{count, input_file_name}
 
 
 // Définition de l'objet principal pour l'application de streaming structuré
@@ -15,6 +13,8 @@ object StructuredStreamingApp extends App {
   val appName = conf.getString("app.name")
   val master = conf.getString("app.master")
   val inputDirectory = conf.getString("app.inputDirectory")
+  val outputDirectory = conf.getString("app.outputDirectory")
+  val checkpointLocation = conf.getString("app.checkpointLocation")
 
   // Initialisation de la session Spark avec configuration spécifique
   val spark = SparkSession.builder()
@@ -65,14 +65,24 @@ object StructuredStreamingApp extends App {
     .csv(inputDirectory) // Chemin vers les fichiers CSV
     .withColumn("filename", input_file_name()) // Ajout d'une colonne contenant le nom du fichier source
 
-  // Configuration de la requête de streaming pour le traitement des données
-  val query = df
-    .groupBy("aircraft_name") // Groupe les données par nom d'avion
-    .count() // Compte le nombre d'occurrences pour chaque groupe
-    .writeStream // Préparation de l'écriture du résultat du streaming
-    .outputMode("complete") // Mode de sortie complet pour afficher tous les comptes à chaque déclenchement
-    .format("console") // Affichage du résultat dans la console
-    .start() // Démarre la requête de streaming
+  // Agrégation pour compter les occurrences de chaque aircraft_name
+  val aggregatedDF = df.groupBy("aircraft_name").agg(count("aircraft_name").as("count"))
+
+  // Fonction pour écrire chaque micro-batch
+  def writeBatch(batchDF: DataFrame, batchId: Long): Unit = {
+    batchDF.coalesce(1)
+      .write
+      .mode("append")
+      .csv(s"$outputDirectory/batch-$batchId")
+  }
+
+  // Utilisation de foreachBatch pour écrire les résultats agrégés
+  val query = aggregatedDF.writeStream
+    .outputMode("update") // Utilisez "update" pour écrire les mises à jour incrémentales
+    .foreachBatch(writeBatch _)
+    .option("checkpointLocation", checkpointLocation) // Chemin pour le checkpoint
+    .start()
+
 
   query.awaitTermination() // Attend que la requête de streaming se termine
 }
